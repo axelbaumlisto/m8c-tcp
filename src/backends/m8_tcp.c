@@ -189,6 +189,7 @@ static void process_received_bytes(const uint8_t *buffer, int bytes_read,
           if (header == AUDIO_HEADER) {
             audio_feed_tcp(cur + 3, expected_len);
           } else {
+            recv_display_pkts++;
             process_display_data(cur + 3, expected_len, slip);
           }
           cur += total_packet_size;
