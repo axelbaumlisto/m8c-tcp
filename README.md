@@ -1,8 +1,43 @@
-# m8c
+# m8c-tcp
+
+> **Fork of [laamaa/m8c](https://github.com/laamaa/m8c) with TCP/WebSocket network backends**
+
+This fork adds TCP and WebSocket backends for remote M8 Tracker control over a network.
+Use cases include:
+- Running m8c on a handheld device (RG353V, RG351) while M8 is connected to a server PC
+- Multiple viewers for the same M8 session
+- Integration with web-based control panels
+- Remote music production over LAN or VPN (Tailscale)
+
+---
+
+## Required Components
+
+**This client does NOT work standalone!** You need the server running:
+
+| Component | Repository | Description |
+|-----------|------------|-------------|
+| **Server** | [m8-display-tcp](https://github.com/zverozabr/m8-display-tcp) | Server with M8 connected via USB |
+| **Client** | [m8c-tcp](https://github.com/zverozabr/m8c-tcp) (this repo) | Native SDL3 client for handheld/PC |
+
+```
+┌─────────────────┐         TCP/WebSocket        ┌─────────────────┐
+│   m8c-tcp       │◄───────────────────────────►│ m8-display-tcp  │
+│   (Client)      │    Display + Audio + Input   │   (Server)      │
+│                 │                              │                 │
+│  RG353V/PC      │         Network              │  PC + M8 USB    │
+└─────────────────┘                              └─────────────────┘
+```
+
+> **Note:** The server ([m8-display-tcp](https://github.com/zverozabr/m8-display-tcp)) also has a built-in **Web UI** at `http://server:8080` — you can use it from any browser without this client. But for native handheld display (RG353V, RG351), you need m8c-tcp.
+
+**Docker:** Server and Web UI can be run in Docker container. See [m8-display-tcp](https://github.com/zverozabr/m8-display-tcp) for Docker setup.
+
+---
 
 ## Introduction
 
-*m8c* is a remote display client for the Dirtywave M8 Tracker. It mirrors the M8’s display, enables
+*m8c* is a remote display client for the Dirtywave M8 Tracker. It mirrors the M8's display, enables
 keyboard/gamepad control, and can route audio to your computer—useful for recording, streaming, larger screens,
 or alternative input methods. The application is cross‑platform and can be built on Linux, Windows (MSYS2/MINGW64), and
 macOS.
@@ -20,6 +55,8 @@ support the creator, Trash80 via [Patreon](https://www.patreon.com/trash80).
 
 Many thanks to:
 
+* [laamaa](https://github.com/laamaa/m8c): For the original m8c project this fork is based on
+* [jasonporritt](https://github.com/jasonporritt/rg351_m8c): For RG351/RG353V deployment scripts
 * Trash80: For the great M8 hardware and the original fonts that were converted to a bitmap for use in the program.
 * driedfruit: For a wonderful little routine to blit inline bitmap
   fonts, [SDL_inprint](https://github.com/driedfruit/SDL_inprint/)
@@ -134,6 +171,81 @@ your device.
 ```
 
 If the stars are aligned correctly, you should see the M8 screen.
+
+-----------
+
+## Network Backends (TCP/WebSocket)
+
+This fork adds TCP and WebSocket backends that connect to an [m8-display-tcp](https://github.com/zverozabr/m8-display-tcp)
+server instead of directly to USB. This enables remote M8 control over a network.
+
+### Building with TCP Backend
+
+The TCP backend requires only SDL3 (no libserialport needed):
+
+```sh
+# Linux
+sudo apt install libsdl3-dev
+
+# Build
+make tcp
+```
+
+#### Running with TCP
+
+First, start the [m8-display-tcp](https://github.com/zverozabr/m8-display-tcp) server on a machine with M8 connected via USB.
+Then connect from m8c:
+
+```sh
+# Connect to server (default port 3333)
+./m8c --dev 192.168.1.100:3333
+
+# Connect to localhost
+./m8c --dev localhost:3333
+
+# Just hostname (uses default port 3333)
+./m8c --dev 192.168.1.100
+```
+
+### Building with WebSocket Backend
+
+The WebSocket backend requires SDL3 and libwebsockets:
+
+```sh
+# Linux
+sudo apt install libsdl3-dev libwebsockets-dev
+
+# Build
+make websocket
+```
+
+#### Running with WebSocket
+
+```sh
+# Connect to server (default port 8080)
+./m8c --dev 192.168.1.100:8080
+```
+
+### TCP Audio Streaming
+
+TCP backend supports audio streaming from the server. Audio is received as raw PCM (S16LE stereo 44100Hz) and played
+through:
+- **aplay** (direct ALSA) — default on ARM devices, bypasses SDL3 audio issues
+- **SDL3 AudioStream** — fallback on other platforms
+
+Audio starts automatically when the server streams audio data.
+
+### Network Latency
+
+| Setup | Typical Latency | Notes |
+|-------|-----------------|-------|
+| Local Wi-Fi | 1-5ms | Recommended for music production |
+| Tailscale VPN | 50-120ms | Works but noticeable delay |
+| Internet | 100ms+ | Use for monitoring only |
+
+For protocol details, see [PROTOCOL.md](PROTOCOL.md).
+
+-----------
 
 #### Choosing a preferred device
 
