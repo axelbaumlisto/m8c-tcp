@@ -23,7 +23,10 @@ RingBuffer *audio_buffer = NULL;
 static uint8_t *audio_callback_buffer = NULL;
 static size_t audio_callback_buffer_size = 0;
 static int audio_prebuffer_filled = 0;
-#define PREBUFFER_SIZE (8 * 1024)  // Wait for 8KB before starting playback
+// Low-latency prebuffer: 2KB = ~12ms at 44.1kHz stereo 16-bit
+// Old: 8KB = ~46ms (too much latency)
+// For unstable networks, increase to 4KB
+#define PREBUFFER_SIZE (2 * 1024)
 
 static void audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount) {
   (void)userdata;  // Suppress unused parameter warning

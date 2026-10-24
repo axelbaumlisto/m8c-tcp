@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <poll.h>  // For low-latency socket polling
 
 #include "../command.h"
 #include "../config.h"
@@ -27,7 +28,7 @@
 #define SLIP_END 0xC0        // SLIP frame delimiter (unused in framed protocol)
 
 #define TCP_READ_SIZE 4096
-#define TCP_READ_DELAY_MS 4
+#define TCP_POLL_TIMEOUT_MS 10  // poll() timeout (was SDL_Delay(4))
 #define AUDIO_BUFFER_SIZE 65536
 
 // TCP socket
@@ -260,6 +261,7 @@ static void process_received_bytes(const uint8_t *buffer, int bytes_read,
 
 static int thread_process_tcp_data(void *data) {
   const thread_params_s *params = data;
+  struct pollfd pfd;
 
   while (!params->should_stop) {
     if (tcp_socket < 0) {
@@ -267,30 +269,46 @@ static int thread_process_tcp_data(void *data) {
       return 0;
     }
 
-    // Non-blocking read
-    int bytes_read = recv(tcp_socket, tcp_buffer, TCP_READ_SIZE, MSG_DONTWAIT);
+    // Use poll() for low-latency waiting - wakes immediately on data
+    pfd.fd = tcp_socket;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
 
-    if (bytes_read < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // No data available, just delay
-        SDL_Delay(TCP_READ_DELAY_MS);
-        continue;
+    int poll_result = poll(&pfd, 1, TCP_POLL_TIMEOUT_MS);
+
+    if (poll_result < 0) {
+      if (errno == EINTR) continue;  // Interrupted, retry
+      SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "poll() error: %s", strerror(errno));
+      return 0;
+    }
+
+    if (poll_result == 0) {
+      // Timeout, no data - continue loop
+      continue;
+    }
+
+    // Check for errors or hangup
+    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+      SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "TCP socket error (revents=%d)", pfd.revents);
+      return 0;
+    }
+
+    // Data available - read it
+    if (pfd.revents & POLLIN) {
+      int bytes_read = recv(tcp_socket, tcp_buffer, TCP_READ_SIZE, 0);
+
+      if (bytes_read < 0) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "TCP read error: %s", strerror(errno));
+        return 0;
       }
-      SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "TCP read error: %s",
-                      strerror(errno));
-      return 0;
-    }
 
-    if (bytes_read == 0) {
-      SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "TCP connection closed by server");
-      return 0;
-    }
+      if (bytes_read == 0) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "TCP connection closed by server");
+        return 0;
+      }
 
-    if (bytes_read > 0) {
       process_received_bytes(tcp_buffer, bytes_read, &slip);
     }
-
-    SDL_Delay(TCP_READ_DELAY_MS);
   }
   return 1;
 }
@@ -362,9 +380,31 @@ static int connect_tcp() {
     return 0;
   }
 
-  // Set TCP_NODELAY for low latency
+  // Set TCP_NODELAY for low latency (disable Nagle's algorithm)
   int flag = 1;
   setsockopt(tcp_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
+  // TCP_QUICKACK - disable delayed ACK for faster response (Linux-specific)
+#ifdef TCP_QUICKACK
+  setsockopt(tcp_socket, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
+#endif
+
+  // Socket timeouts - prevent hanging on network issues
+  struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
+  setsockopt(tcp_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(tcp_socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+  // TCP keepalive - detect dead connections faster
+  int keepalive = 1;
+  setsockopt(tcp_socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(int));
+#ifdef TCP_KEEPIDLE
+  int keepidle = 5;   // Start probes after 5 sec idle
+  int keepintvl = 1;  // Probe every 1 sec
+  int keepcnt = 3;    // 3 probes before disconnect
+  setsockopt(tcp_socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(int));
+  setsockopt(tcp_socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(int));
+  setsockopt(tcp_socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(int));
+#endif
 
   // Connect
   struct sockaddr_in server_addr;

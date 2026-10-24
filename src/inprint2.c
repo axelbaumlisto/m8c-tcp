@@ -94,7 +94,18 @@ void inprint(SDL_Renderer *dst, const char *str, Uint32 x, Uint32 y, const Uint3
     dst = selected_renderer;
 
   for (; *str; str++) {
-    const int ascii_code = (int)*str;
+    int ascii_code = (int)(unsigned char)*str;
+
+    // Validate character range (font only has ASCII 33-126)
+    if (ascii_code < 32) {
+      // Control characters - skip
+      continue;
+    }
+    if (ascii_code > 126) {
+      // Extended ASCII - fallback to '?'
+      ascii_code = '?';
+    }
+
     int id = ascii_code - font_offset;
 
 #if (CHARACTERS_PER_COLUMN != 1)
@@ -116,15 +127,14 @@ void inprint(SDL_Renderer *dst, const char *str, Uint32 x, Uint32 y, const Uint3
       previous_fgcolor = fgcolor;
     }
 
-    if (bgcolor != fgcolor) {
-      SDL_SetRenderDrawColor(selected_renderer, (bgcolor & 0x00FF0000) >> 16,
-                             (bgcolor & 0x0000FF00) >> 8, bgcolor & 0x000000FF, 0xFF);
-      bg_rect = d_rect;
-      bg_rect.w = (float)selected_inline_font->glyph_x;
-      bg_rect.h = (float)selected_inline_font->glyph_y;
-
-      SDL_RenderFillRect(dst, &bg_rect);
-    }
+    // Always draw background rectangle (like browser version)
+    // Previously: only drew when bgcolor != fgcolor (caused invisible UI elements)
+    SDL_SetRenderDrawColor(selected_renderer, (bgcolor & 0x00FF0000) >> 16,
+                           (bgcolor & 0x0000FF00) >> 8, bgcolor & 0x000000FF, 0xFF);
+    bg_rect = d_rect;
+    bg_rect.w = (float)selected_inline_font->glyph_x;
+    bg_rect.h = (float)selected_inline_font->glyph_y;
+    SDL_RenderFillRect(dst, &bg_rect);
     // Do not try to render a whitespace character because the font doesn't have one
     if (ascii_code != 32) {
       SDL_RenderTexture(dst, selected_font, &s_rect, &d_rect);

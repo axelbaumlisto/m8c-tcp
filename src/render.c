@@ -272,6 +272,21 @@ void draw_rectangle(struct draw_rectangle_command *command) {
   render_rect.h = command->size.height;
   render_rect.w = command->size.width;
 
+  // Diagnostic: log rectangles near screen edges or out of bounds
+  float bottom = render_rect.y + render_rect.h;
+  float right = render_rect.x + render_rect.w;
+  if (bottom > (float)texture_height || render_rect.y >= (float)(texture_height - 30)) {
+    SDL_LogDebug(SDL_LOG_CATEGORY_RENDER,
+      "RECT EDGE: x=%.0f y=%.0f w=%.0f h=%.0f (bottom=%.0f > %d?)",
+      render_rect.x, render_rect.y, render_rect.w, render_rect.h,
+      bottom, texture_height);
+  }
+  if (right > (float)texture_width) {
+    SDL_LogDebug(SDL_LOG_CATEGORY_RENDER,
+      "RECT CLIP: x=%.0f w=%.0f (right=%.0f > %d)",
+      render_rect.x, render_rect.w, right, texture_width);
+  }
+
   // Background color changed
   if (render_rect.x == 0 && render_rect.y <= 0 && render_rect.w == (float)texture_width &&
       render_rect.h >= (float)texture_height) {
@@ -449,10 +464,10 @@ int renderer_initialize(config_params_s *conf) {
 }
 
 void render_screen(config_params_s *conf) {
-  if (!dirty && !settings_is_open()) {
-    // No draw commands and settings overlay not active, skip rendering
-    return;
-  }
+  // Always render to avoid flickering on some GPU drivers (Mali, etc.)
+  // When dirty=0 and settings closed, we still need to present the frame
+  // to keep the display buffer swap consistent
+  // Previously had early return here which caused flickering on ARM/Mali
 
   if (!conf) {
     SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "render_screen configuration parameter is NULL.");

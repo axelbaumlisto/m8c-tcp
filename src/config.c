@@ -30,7 +30,8 @@ config_params_s config_initialize(char *filename) {
 
   c.init_fullscreen = 0; // default fullscreen state at load
   c.integer_scaling = 0; // use integer scaling for the user interface
-  c.wait_packets = 256;  // amount of empty command queue reads before assuming device disconnected
+  // Faster disconnect detection: 50 * 4ms = 200ms (was 256 = 1024ms)
+  c.wait_packets = 50;
   c.audio_enabled = 0;   // route M8 audio to default output
   c.audio_buffer_size = 0;    // requested audio buffer size in samples: 0 = let SDL decide
   c.audio_device_name = NULL; // Use this device, leave NULL to use the default output device

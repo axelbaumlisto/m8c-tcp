@@ -304,8 +304,11 @@ int audio_init_tcp(const char *output_device_name, const unsigned int audio_buff
   if (use_aplay) {
     // Start aplay as a subprocess, reading from stdin
     // Format: S16_LE, 44100Hz, stereo
-    // Use larger buffer to prevent underruns: --buffer-size=65536 --period-size=8192
-    aplay_pipe = popen("aplay -D hw:0,0 -f S16_LE -r 44100 -c 2 -t raw --buffer-size=65536 --period-size=8192 - 2>&1", "w");
+    // Low-latency: buffer=4096 (~23ms), period=512 (~3ms)
+    // For unstable networks, increase to buffer=8192, period=1024
+    // Use 'default' ALSA device (goes through dmix, allows device sharing)
+    // 'hw:0,0' would fail with "Device or resource busy" if alsaloop or other process has it open
+    aplay_pipe = popen("aplay -D default -f S16_LE -r 44100 -c 2 -t raw --buffer-size=4096 --period-size=512 - 2>/dev/null", "w");
     if (!aplay_pipe) {
       SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to start aplay: %s", strerror(errno));
       // Fall back to SDL3

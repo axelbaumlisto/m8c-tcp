@@ -20,10 +20,31 @@ uint32_t ring_buffer_empty(RingBuffer *rb) { return rb->size == 0; }
 
 uint32_t ring_buffer_full(RingBuffer *rb) { return rb->size == rb->max_size; }
 
+// Overflow counter for diagnostics
+static uint32_t overflow_count = 0;
+static Uint64 last_overflow_log = 0;
+
 uint32_t ring_buffer_push(RingBuffer *rb, const uint8_t *data, uint32_t length) {
-  if (ring_buffer_full(rb)) {
-    return -1; // buffer full, push fails
+  // If buffer is full or not enough space, drop OLDEST data to make room
+  // This keeps audio playing (with glitches) instead of complete silence
+  uint32_t available_space = rb->max_size - rb->size;
+  if (length > available_space) {
+    uint32_t to_drop = length - available_space;
+    // Advance head to drop oldest data
+    rb->head = (rb->head + to_drop) % rb->max_size;
+    rb->size -= to_drop;
+    overflow_count++;
+
+    // Log overflow at most once per second
+    Uint64 now = SDL_GetTicks();
+    if (now - last_overflow_log > 1000) {
+      SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                  "Ring buffer overflow: dropped %u old bytes (total overflows: %u)",
+                  to_drop, overflow_count);
+      last_overflow_log = now;
+    }
   }
+
   uint32_t space1 = rb->max_size - rb->tail;
   uint32_t n = length <= rb->max_size - rb->size ? length : rb->max_size - rb->size;
   if (n <= space1) {

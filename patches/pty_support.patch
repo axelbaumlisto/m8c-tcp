@@ -1,0 +1,27 @@
+--- a/src/backends/m8_libserialport.c
++++ b/src/backends/m8_libserialport.c
+@@ -65,13 +65,17 @@ static int check(enum sp_return result);
+
+ static int detect_m8_serial_device(const struct sp_port *m8_port, const char *preferred_device) {
+   // Check the connection method - we want USB serial devices
++  const char *port_name = sp_get_port_name(m8_port);
++
++  // If a preferred device is specified, always accept it regardless of transport
++  if (preferred_device != NULL && strcmp(preferred_device, port_name) == 0) {
++    SDL_Log("Using preferred device: %s", port_name);
++    return 1;
++  }
++
+   const enum sp_transport transport = sp_get_port_transport(m8_port);
+
+   if (transport == SP_TRANSPORT_USB) {
+-    // If a preferred device is specified, check if this port matches it
+-    if (preferred_device != NULL) {
+-      const char *port_name = sp_get_port_name(m8_port);
+-      if (strcmp(preferred_device, port_name) == 0) {
+-        return 1;  // Force return 1 for preferred device
+-      }
+-    }
+
+     // Get the USB vendor and product IDs.
+     int usb_vid, usb_pid;
